@@ -1,0 +1,142 @@
+---
+title: "Applied Predictive Analytics - Beta Geometrics Model"
+author: "Hongbo Jiang"
+date: "January 13, 2018"
+output: html_document
+---
+
+```{r}
+suppressWarnings(suppressPackageStartupMessages(library(dplyr)))
+suppressWarnings(suppressPackageStartupMessages(library(plyr)))
+suppressWarnings(suppressPackageStartupMessages(library(ggplot2)))
+```
+First, we get the package we need to use for the following questions. 
+
+###1. Estimate a BG model using the customer count data for GetFit's January cohort. Report the maximum likelihood estimates (MLE) of the model parameters, and well as the log likelihood at the MLE.
+```{r}
+N0 <- 2132 # starting customers
+Tobs <- 8  # eight months
+subs <- dplyr::data_frame(t=0:8,
+                          month = t+1,
+                          S=c(2132, 1406, 1069, 894, 
+                              765, 656, 578, 525, 482)) # create dataset
+subs1 <- suppressWarnings(mutate(subs, N=c(NA, -diff(S))))
+
+
+N <- subs1[["N"]][-1]
+S <- subs1[["S"]][Tobs+1]
+```
+
+Then, write out the probability function. 
+```{r}
+log_P <- function(t, a, b){
+  lbeta(a+1, b+t-1) - lbeta(a, b)
+}
+```
+
+Survival funcion stated as follow. 
+```{r}
+log_S <- function(t, a, b){
+  lbeta(a, b+t) - lbeta(a, b)
+} 
+```
+
+Then state the maximum likelihood estimates (MLE) of the model parameters.
+```{r}
+LL_BG <- function(pars, N, S) {
+  a <- exp(pars[1])
+  b <- exp(pars[2])
+  Tobs <- length(N)
+  t <- 1:Tobs
+  LL_p <- sum(N * log_P(t, a, b))
+  LL_s <- S * log_S(Tobs, a, b)
+  LL_all <- LL_p + LL_s
+  return(-LL_all) ## scalar
+} 
+
+opt_BG <- optim(c(0,0),fn=LL_BG, 
+                N=N, S=S)
+a <- exp(opt_BG[["par"]][1])
+b <- exp(opt_BG[["par"]][2])
+LL <- -opt_BG[["value"]]
+c(a, b)
+```
+
+Log likelihood at the MLE
+```{r}
+LL_BG(log(c(a,b)), N=N, S=S) 
+```
+
+###2. Consider a randomly-chosen member of the population who was newly acquired in January.
+
+####(a) What is the expected probability that this customer will cancel service after only onemonth?
+```{r}
+exp(log_P(1, a, b))
+```
+
+####(b) What is the expected probability that this customer will cancel service after two months?
+```{r}
+exp(log_P(2, a, b))
+```
+
+####(c) Suppose this customer renewed his membership for February. What is the expected probability that he will renew for March?
+```{r}
+exp(log_S(1, a, b+1))
+```
+
+####(d) What is the expected renewal probability for a customer who remained active through August?
+```{r}
+exp(log_S(1, a, b+7))
+```
+
+####(e) How many members of the cohort do we expect to be active through the end of the year?
+```{r}
+482*exp(log_S(3, a, b+8))
+```
+
+###3.GetFit will acquire 2,132 new customers in September, October, November and December. These customers are all random samples from the same population as the January cohort. The company wants to estimate the total number of customers from these new cohorts that they will have in each month, through August of the next year. Clearly, there are no surviving October customers in September, November customers in September or October, etc.
+
+####(a) Using your inferences about the population that you derived from the January cohort, complete the table below 
+```{r}
+ Month<- c("September", "October", "November", "December", "January", "February", "March", "April", "May", "June", "July", "August")
+subs2 <- data.frame(Month = Month)
+September_co <- c(1:11)
+October_co <- c(1:10)
+November_co <- c(1:9)
+December_co <- (1:8)
+subs2 <- mutate(subs2, September = c(N0, N0*exp(log_S(September_co,a,b))))
+subs2 <- mutate(subs2, October = c(0, N0, N0*exp(log_S(October_co,a,b))))
+subs2 <- mutate(subs2, November = c(0,0,N0,N0*exp(log_S(November_co,a,b))))
+subs2 <- mutate(subs2, December = c(0,0,0,N0, N0*exp(log_S(December_co,a,b))))
+subs2 <- mutate(subs2, Total = September + October + November + December)
+subs2
+```
+
+####(b) Examine the retention rates from January to August for each cohort, and for the aggregated customer base. How do the implied shapes of the retention curves differ? Give an intuitive explanation of these patterns. 
+```{r}
+r <- data.frame(t = c(1:7),
+               rr_Sept = subs2$September[6:12]/subs2$September[5:11],
+               rr_Oct = subs2$October[6:12]/subs2$October[5:11],
+               rr_Nov = subs2$November[6:12]/subs2$November [5:11],
+               rr_Dec = subs2$December[6:12]/subs2$December[5:11],
+               rr_Total = subs2$Total[6:12]/subs2$Total[5:11])
+
+r
+```
+
+In order to get a better visual for the pattern, we decided to plot this graph. 
+```{r}
+suppressWarnings(library(tidyr))
+regplot2 <- select(r, t, rr_Sept, rr_Oct, rr_Nov, rr_Dec, rr_Total) %>%
+gather(Model, `S(t)`, rr_Sept:rr_Total) %>%
+ggplot(aes(x=t, y=`S(t)`, color=Model, linetype=Model)) %>%
++ geom_line() %>%
++ scale_x_continuous("r (t)", breaks=1:7, labels=1:7, limits=c(1,7)) %>%
++ scale_y_continuous("S(t)", limits=c(0.75,0.95))
+regplot2
+```
+
+Retention rates increase every month, which make sense since the longer customers stay with the brand, the more loyal they become, and less likely to cancle the service. The renteion rate are different for each cohort. The customers that acquired most recent have the lowest retention rate, which also make sense beacuse the new customers are more likely to cancle the service. The total retention rate is basically the average of each cohort. 
+
+
+

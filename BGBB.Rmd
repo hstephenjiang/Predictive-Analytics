@@ -1,0 +1,149 @@
+---
+title: "BGBB Model"
+author: "Hongbo Jiang"
+date: "January 17, 2018"
+output: html_document
+--- 
+###Question One
+####Answer the following questions about the population of GetFit customers from Homework 1. Assume that a GetFit membership is $70 per month, and that the monthly discount rate is 1.5% (annual rate of 18%). 
+```{r}
+##input essential data and function
+suppressWarnings(library(tidyr))
+suppressWarnings(library(dplyr))
+suppressWarnings(library(hypergeo))
+suppressWarnings(library(ggplot2))
+suppressWarnings(library(pander))
+options(digits=5)
+a <- 0.7914914
+b <- 1.542406
+m <- 70
+d <- 0.015
+```
+<br />
+
+####(a). What is the most that GetFit should spend to acquire a new customer?
+```{r}
+del <- hypergeo(1, b, a+b, 1/(1+d))
+m*suppressWarnings(as.numeric(del))
+```
+<br />
+
+####(b) What is the most that GetFit should spend to retain an existing customer who was acquired 1 month ago (about to make her first renewal decision)?
+```{r}
+derl <- function(n,a,b,d){ 
+  q1 <- (b+n-1)/(a+b+n-1) 
+  q2 <- hypergeo(1,b+n,a+b+n,1/(1+d)) 
+  return(suppressWarnings(as.numeric(q1*q2)))
+}
+m*derl(1,a,b,d)
+```
+<br />
+
+####(c) What is the most that GetFit should spend to retain an existing customer who was acquired 10 months ago?
+```{r}
+m*derl(10,a,b,d)
+```
+<br />
+
+####(d) Explain why ignoring heterogeneity in churn probabilities will lead to an undervaluation of the customer base. How does the amount of heterogeneity in the population affect that undervaluation? 
+<br />
+If heterogeneity in churn probabilities is ignored, it seemes that every customer is treated to have the same churn rate. For those high churn rate customers, they will now have a lower churn rate without heterogeneity.For those low churn rate customers, they should have stayed with the company for a long time, but now they will leave the company earlier than actual. The value of overvaluation of high churn rate customers are less than that of undervaluation of the low churn rate customer, so ignoring heterogeneity in churn probability will lead to an undervaluation of the customer base. 
+<br />
+If the customer base does not have so much heterogeneity, the amount of heterogeneity that affect undervaluation will be little.
+<br />
+
+
+###Question Two
+####Ben's Knick Knacks is a manufacturer of commemorative collectibles, such as sports memorabilia, coin collections, or porcelain figurines. Much of Ben's marketing budget is spent on targeted direct mail. A customer would receive a letter or postcard that contains a special offer for a particular item. To redeem the offer, the customer either calls a special phone number, or enters a promotional code in an online order form. This process lets Ben track who receives the targeted offer, and which of those customers converted to a sale. 
+####Ben's database contains mailing addresses for 1,552,037 households. Each household belongs to one of 126 segments. How the segments are constructed is unimportant for this exercise, but in general, segments would be defined by demographic and psychographic variables (e.g., age, income, education level, estimated cultural and politcal characteristics), and possibly some past purchase data. The only descriptive information we have about a segment is the identification number, so we can act as if there are no salient similarities or overlapping characteristics across segments. Some segments contain more households than others. 
+####A typical direct mail campaign costs $3,343 for every 10,000 mailings. Ben has a limited marketing budget, and he does not want to "burn out" households with offers that are unlikely to be successful (thus saving those households for future campaigns). Within a single direct mail campaign, Ben will target only those segments that he expects to be profitable. His problem is that he does not know what the expected response rate (long-run sales per mailing) will be for each segment. He addresses this issue by conducting a test campaign on a small fraction of the database. To run the test, Ben samples households randomly from the segments, and sends those households a sales flyer. He then tracks how many of households purchased the item in response to the offer, and uses the results to decide which segments to target in the full campaign. When rolling out the campaign, the decision to target a segment is a binary one: the answer is either Yes or No. 
+####Ben's most recent creation is a baseball-themed commemorative plate. Each plate costs $138.50 to produce, and the selling price is $300. Sales are limited to one plate per household. The results of a test campaign (to 3.24% of the database) are in the file bens_data.txt. For each segment, we have the number of households who received a test mailing, and the number of households who purchased the item. Each observation is a segment, not a customer.
+```{r}
+##input data
+bens <- read.table("./bens_data.txt", head=TRUE)
+```
+
+####(a). What is the expected probability that this customer will cancel service after only one month? 
+```{r}
+sum_s <- sum(bens$sales)
+sum_m <- sum(bens$mailed)
+sum_s/sum_m
+```
+<br />
+
+####(b). What is the average segment-level observed response rate?
+```{r}
+mean(bens$sales/bens$mailed)
+```
+<br />
+
+####(c). Suppose heterogeneity in segments' response rates (p) is described by a beta(a,b)distribution. What are the maximum likelihood estimates of a and b?
+```{r}
+##create log_px function
+log_bb_px <- function(x,m,a,b) { 
+  lchoose(m, x) + lbeta(a+x, b+m-x) - lbeta(a,b)
+}
+##create loglikelihood function
+LL_BG <- function(pars, x, m) {
+  a <- exp(pars[1]) 
+  b <- exp(pars[2])
+  logprob <- log_bb_px(x,m,a,b)
+  return(-sum(logprob))
+}
+##calculate the maximum log likelihood
+pars.start <- c(0, 0)
+res <- optim(pars.start, fn=LL_BG,
+             m = bens$mailed,
+             x = bens$sales)
+##get the number of the maximum likelihood, a and b
+LL_mle <- -res$value
+pars_mle <- res$par
+a <- exp(pars_mle[1])
+b <- exp(pars_mle[2])
+cat("LL = ", LL_mle, " a = ",a," b = ",b,"\n")
+```
+<br />
+
+####(d). Under the assumptions of the model in Part2c, what is the expected response rate for a randomly chosen segment?
+```{r}
+err <- exp(log_bb_px(1,1,a,b))
+err
+```
+<br />
+
+####(e) What is the probability that a randomly chosen segment will have a response rate that is less than your answer in part 2d?
+```{r}
+pbeta(err, a, b)
+```
+<br />
+
+####(f) Plot the probability that at least one customer in a randomly chosen segment will purchase the product after Ben sends m mailings to that segment. On this plot,m will be on the x-axis (vary m from 1 to 2,000), and the probability will be on the y-axis. Be sure your axis labels are informative.
+```{r}
+data_frame(m=1:2000,reach=1-(beta(a,b+m)/beta(a,b))) %>% 
+  ggplot(aes(x=as.integer(m),y=reach)) %>%
+  + geom_line() %>% 
+  + scale_x_continuous("Number of Mailings") %>% 
+  + scale_y_continuous("Probablity of at least one customer will purchase")
+```
+
+####Then, give an intuitive explanation for the slope and shape of the curve. What is the maximum value of this probability if m were to continue to increase (i.e., if m -> infinite)
+<br />
+If m were continue to increase, the maximum value of probability that at least one customer in a randomly chosen segment will prechase the product will infinitely approach to 1. As the number of mailings increase, the opportunity that the mailing results in a sales will increase.Therefore, a customer is morely likely to buy at least once.
+
+<br />
+
+####(g) Ben wants some more information about the potential success of his direct mail campaign, but in table form. For a small set of possible mail quantities, he wants to know not only the probability that at least one member of the segment will buy, but also the probability of making two or more sales, and the expected number of sales. Report your results in a table similar to the one below, using the values of m in the top row. Number of mailings
+```{r}
+options(scipen=999)
+month <- c(2, 5, 10, 25, 50, 250, 500)
+prob1 <- 1-exp(log_bb_px(0,month,a,b))
+prob2 <- prob1-exp(log_bb_px(1,month,a,b))
+esales <- month*(a/(a+b))
+pred <- data.frame("Number of maillings(m)" = month,
+                   "Probability of at least one sale" = prob1,
+                   "Probability of two or more sales" = prob2,
+                   "sales" = esales
+                   )
+pred <- t(pred)
+format(pred, digits=2)
+```
